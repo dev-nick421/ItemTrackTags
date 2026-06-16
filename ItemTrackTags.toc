@@ -1,5 +1,5 @@
 ## Interface: 120005
-## Title: Item Track Tags
+## Title: ItemTrackTags
 ## Notes: Shows each equipped item's upgrade track as a tiny colored letter on the Character panel.
 ## Author: dev-nick421
 ## Version: 1.0
