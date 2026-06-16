@@ -1,0 +1,8 @@
+## Interface: 120005
+## Title: Item Track Tags
+## Notes: Shows each equipped item's upgrade track as a tiny colored letter on the Character panel.
+## Author: dev-nick421
+## Version: 1.0
+## IconTexture: Interface\ICONS\inv_misc_enchantedscroll
+
+ItemTrackTags.lua
