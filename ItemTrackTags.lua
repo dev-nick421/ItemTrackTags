@@ -1,10 +1,9 @@
 --[[ Item Track Tags ---------------------------------------------------------
-  Puts a tiny colored letter on each equipped item in the Character panel (C)
-  showing its upgrade track: E A V C H M.
+  Marks each equipped item in the Character panel (C):
+    * Upgrade-track items -> a colored letter   E A V C H M
+    * Crafted items       -> their crafting quality icon (Tier 1-5)
 
-  Lightweight: no options UI, no SavedVariables. 
-  
-  You can edit the TRACKS table to add track names for other localizations, or to change letters/colors,
+  Settings in-game behind  /itt  (font size, per-track colors, crafted toggle), saved per account.
 ----------------------------------------------------------------------------]]
 
 -- ===========================================================================
@@ -24,13 +23,13 @@
 -- ===========================================================================
 --  STATIC CONFIG  (everything else is in the /itt menu)
 -- ===========================================================================
-
+ 
 local FONT_FLAGS = "OUTLINE"    -- "" | "OUTLINE" | "THICKOUTLINE"
 local ANCHOR     = "TOPLEFT"    -- corner of the slot the marker sits in
 local OFFSET_X   = 2
 local OFFSET_Y   = -2
 
--- Saved defaults. The menu edits these at runtime -> saved per account.
+-- Saved defaults. Menu edits these at runtime -> saved per account.
 local DEFAULTS = {
     fontSize    = 12,
     showCrafted = true,
@@ -92,7 +91,7 @@ local SLOTS = {
     "CharacterMainHandSlot", "CharacterSecondaryHandSlot",
 }
 
-local tags = {} 
+local tags = {}
 
 local function GetTag(button)
     if tags[button] then return tags[button] end
@@ -113,17 +112,26 @@ end
 local function GetTrackLetter(slotID)
     local data = C_TooltipInfo.GetInventoryItem("player", slotID)
     if not data or not data.lines then return nil end
+    local fallback
     for _, line in ipairs(data.lines) do
         local text = line.leftText
         if text then
+            -- Normal Items -> track word before the rank numbers.
             local word = text:match("([^%s:]+)%s+%d+%s*/%s*%d+")
-            if word then
-                local letter = TRACK_KEY[word]
-                if letter then return letter end
+            if word and TRACK_KEY[word] then
+                return TRACK_KEY[word]
+            end
+            -- "Ascendant Voidforged: Myth", "Sporefused: Myth" etc. have no
+            -- rank -- the track is the word right after a colon.
+            if not fallback then
+                local t = text:match(":%s*(%a+)")
+                if t and TRACK_KEY[t] then
+                    fallback = TRACK_KEY[t]
+                end
             end
         end
     end
-    return nil
+    return fallback
 end
 
 -- Crafting quality tier (1-5) for crafted gear
@@ -132,8 +140,8 @@ local function GetCraftedQuality(slotID)
     if not link then return nil end
     local f = C_TradeSkillUI and C_TradeSkillUI.GetItemCraftedQualityByItemInfo
     if not f then return nil end
-    local q = f(link)
-    if q and q > 0 then return q end
+    local ok, q = pcall(f, link)
+    if ok and q and q > 0 then return q end
     return nil
 end
 
@@ -146,7 +154,18 @@ local function UpdateSlot(button)
     fs:SetFont(STANDARD_TEXT_FONT, DB.fontSize, FONT_FLAGS)
     local slotID = button:GetID()
 
-    -- Crafted quality icon takes priority when enabled.
+    -- Upgrade-track letter takes priority -- this runs before the crafted API, so a tracked 
+    -- item (incl. ones like Ascendant Voidforged) always shows even if the crafted-quality call misfires or errors.
+    local letter = GetTrackLetter(slotID)
+    if letter then
+        local c = DB.colors[letter]
+        fs:SetText(letter)
+        fs:SetTextColor(c[1], c[2], c[3])
+        fs:Show()
+        return
+    end
+
+    -- Otherwise, crafted gear shows its quality icon (if enabled).
     if DB.showCrafted then
         local q = GetCraftedQuality(slotID)
         if q then
@@ -156,16 +175,6 @@ local function UpdateSlot(button)
             fs:Show()
             return
         end
-    end
-
-    -- Otherwise the upgrade-track letter.
-    local letter = GetTrackLetter(slotID)
-    if letter then
-        local c = DB.colors[letter]
-        fs:SetText(letter)
-        fs:SetTextColor(c[1], c[2], c[3])
-        fs:Show()
-        return
     end
 
     fs:SetText("")
@@ -325,16 +334,62 @@ local function TogglePanel()
     if panel:IsShown() then panel:Hide() else panel:Show() end
 end
 
+-- Copyable text window for /itt dump (chat is hard to copy out of).
+local dumpFrame
+local function ShowDump(blob)
+    if not dumpFrame then
+        dumpFrame = CreateFrame("Frame", "ItemTrackTagsDump", UIParent, "BackdropTemplate")
+        dumpFrame:SetSize(560, 420)
+        dumpFrame:SetPoint("CENTER")
+        dumpFrame:SetFrameStrata("DIALOG")
+        dumpFrame:SetBackdrop({
+            bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
+            edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+            edgeSize = 16,
+            insets   = { left = 4, right = 4, top = 4, bottom = 4 },
+        })
+        dumpFrame:SetMovable(true)
+        dumpFrame:EnableMouse(true)
+        dumpFrame:RegisterForDrag("LeftButton")
+        dumpFrame:SetScript("OnDragStart", dumpFrame.StartMoving)
+        dumpFrame:SetScript("OnDragStop", dumpFrame.StopMovingOrSizing)
+
+        local heading = dumpFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        heading:SetPoint("TOP", 0, -12)
+        heading:SetText("ItemTrackTags dump  -  click text, Ctrl+A, Ctrl+C")
+
+        local cls = CreateFrame("Button", nil, dumpFrame, "UIPanelCloseButton")
+        cls:SetPoint("TOPRIGHT", 2, 2)
+
+        local scroll = CreateFrame("ScrollFrame", "ItemTrackTagsDumpScroll", dumpFrame, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 14, -36)
+        scroll:SetPoint("BOTTOMRIGHT", -32, 14)
+
+        local edit = CreateFrame("EditBox", nil, scroll)
+        edit:SetMultiLine(true)
+        edit:SetFontObject(ChatFontNormal)
+        edit:SetWidth(500)
+        edit:SetAutoFocus(false)
+        edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        scroll:SetScrollChild(edit)
+        dumpFrame.edit = edit
+    end
+    dumpFrame.edit:SetText(blob)
+    dumpFrame.edit:HighlightText()
+    dumpFrame:Show()
+    dumpFrame.edit:SetFocus()
+end
+
 -- ===========================================================================
 --  EVENTS
 -- ===========================================================================
 
 local f = CreateFrame("Frame")
-        f:RegisterEvent("ADDON_LOADED")
-        f:RegisterEvent("PLAYER_LOGIN")
-        f:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
-        f:RegisterEvent("UNIT_INVENTORY_CHANGED")
-        f:SetScript("OnEvent", function(_, event, arg1)
+f:RegisterEvent("ADDON_LOADED")
+f:RegisterEvent("PLAYER_LOGIN")
+f:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+f:RegisterEvent("UNIT_INVENTORY_CHANGED")
+f:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == "ItemTrackTags" then
             ItemTrackTagsDB = ItemTrackTagsDB or {}
@@ -352,36 +407,52 @@ local f = CreateFrame("Frame")
 end)
 
 -- ===========================================================================
---  MENU:  /itt  -> menu  |  /itt debug  -> parser dump
+--  MENU:  /itt  -> menu  |  /itt debug  -> parser dump  |  /itt dump -> all lines
 -- ===========================================================================
 SLASH_ITEMTRACKTAGS1 = "/itt"
 SlashCmdList["ITEMTRACKTAGS"] = function(msg)
     msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
     if msg == "debug" then
-        print("|cff88ccffItemTrackTags|r upgrade lines for equipped gear:")
+        print("|cff88ccffItemTrackTags|r parser view (equipped gear):")
         for _, slotName in ipairs(SLOTS) do
             local button = _G[slotName]
             local slotID = button and button:GetID()
             if slotID then
+                local letter = GetTrackLetter(slotID)
+                local q = GetCraftedQuality(slotID)
+                if letter then
+                    print(("  %s: |cff44ff44track %s|r"):format(slotName, letter))
+                end
+                if q then
+                    print(("  %s: |cffffcc00crafted quality %d|r"):format(slotName, q))
+                end
+            end
+        end
+
+    elseif msg == "dump" then
+        -- Full tooltip line dump -> copyable window
+        local out = {}
+        for _, slotName in ipairs(SLOTS) do
+            local button = _G[slotName]
+            local slotID = button and button:GetID()
+            if slotID and GetInventoryItemLink("player", slotID) then
+                out[#out + 1] = slotName
                 local data = C_TooltipInfo.GetInventoryItem("player", slotID)
                 if data and data.lines then
-                    for _, line in ipairs(data.lines) do
+                    for i, line in ipairs(data.lines) do
                         local text = line.leftText
-                        if text and text:match("%d+%s*/%s*%d+") then
-                            local word = text:match("([^%s:]+)%s+%d+%s*/%s*%d+")
-                            local tag = (word and TRACK_KEY[word])
-                                and ("|cff44ff44(track "..TRACK_KEY[word]..")|r")
-                                or (word and "|cffff4444(unknown: "..word..")|r" or "")
-                            print("  " .. slotName .. ": " .. text .. " " .. tag)
+                        if text and text ~= "" then
+                            out[#out + 1] = ("  [%d] (type %s) %s"):format(i, tostring(line.type), text)
                         end
                     end
                 end
-                local q = GetCraftedQuality(slotID)
-                if q then print("  " .. slotName .. ": |cffffcc00crafted quality "..q.."|r") end
             end
         end
+        ShowDump(table.concat(out, "\n"))
+
     elseif msg == "help" then
-        print("|cff88ccffItemTrackTags|r:  /itt  (settings)  |  /itt debug  (parser dump)")
+        print("|cff88ccffItemTrackTags|r:  /itt (settings) | /itt debug (parser view) | /itt dump (all tooltip lines)")
+
     else
         TogglePanel()
     end
