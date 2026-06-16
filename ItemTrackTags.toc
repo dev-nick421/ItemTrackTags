@@ -4,5 +4,6 @@
 ## Author: dev-nick421
 ## Version: 1.0
 ## IconTexture: Interface\ICONS\inv_misc_enchantedscroll
+## SavedVariables: ItemTrackTagsDB
 
 ItemTrackTags.lua
