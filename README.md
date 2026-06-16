@@ -14,7 +14,8 @@ A lightweight World of Warcraft addon that marks each equipped item on the Chara
 | H | Hero | orange |
 | M | Myth | pink |
 
-It just sits in the corner of each gear slot and updates when you open the panel or swap gear.
+Just sits in the corner of each gear slot.
+Updates when you open the panel or swap gear.
 
 ## Install
 
@@ -38,9 +39,12 @@ Settings are saved per account.
 
 ## Localization
 
-Track detection ignores any modifier prefix (e.g. `Sporefused:`, `Galactic Void-Charged:`), reading only the track word before the rank — so new item modifiers keep working automatically.
+Track detection ignores any modifier prefix (e.g. `Sporefused:`, `Galactic Void-Charged:`), reading only the track word before the rank (new item modifiers should work automatically)
 
-Works on **English** and **German** clients out of the box. For any other locale, run `/itt debug` with gear equipped to print the parsed lines, then add the localized track word to the `TRACK_KEY` table in `ItemTrackTags.lua`.
+Currently works with **English** and **German** clients.
+For any other locale, run `/itt debug` with (different track!) gear equipped to print the raw upgrade lines, then add the localized track word to the `TRACKS` table.
+
+Help with localization is much appreciated -> **Create a PR!**
 
 ## Requirements
 
