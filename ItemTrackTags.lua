@@ -247,15 +247,62 @@ local function UpdateContainerButton(button)
     fs:Hide()
 end
 
+-- Known bag windows: the single combined-bags frame plus the classic
+-- per-bag frames (still used when combined bags is turned off, and as the
+-- positional windows combined bags is built from).
+local BAG_FRAME_NAMES = { "ContainerFrameCombinedBags" }
+for i = 1, (NUM_CONTAINER_FRAMES or 13) do
+    BAG_FRAME_NAMES[#BAG_FRAME_NAMES + 1] = "ContainerFrame" .. i
+end
+
+-- Item buttons on a bag frame live in its `.Items` array on modern clients.
+-- Fall back to duck-typing children for anything that doesn't expose that.
+local function GetBagButtons(frame)
+    if frame.Items then return frame.Items end
+    local found = {}
+    for _, child in ipairs({ frame:GetChildren() }) do
+        if child.GetBagID and child.GetID then
+            found[#found + 1] = child
+        end
+    end
+    return found
+end
+
+local function RefreshAllBags()
+    if not DB then return end
+    for _, frameName in ipairs(BAG_FRAME_NAMES) do
+        local frame = _G[frameName]
+        if frame and frame:IsShown() then
+            for _, button in ipairs(GetBagButtons(frame)) do
+                UpdateContainerButton(button)
+            end
+        end
+    end
+end
+
 -- ContainerFrameItemButton_Update lives in Blizzard_ContainerFrame, which
 -- can load on-demand (first time bags are opened) or already be loaded by
--- login, depending on client state -- handle both.
+-- login, depending on client state -- handle both. Hooking it gives instant
+-- updates; hooking each bag frame's OnShow (below) is the resilient
+-- fallback in case that internal function isn't the one actually driving
+-- the combined-bags frame on this client.
 local hookedContainerFrame = false
 local function HookContainerFrame()
     if hookedContainerFrame then return end
-    if not ContainerFrameItemButton_Update then return end
-    hooksecurefunc("ContainerFrameItemButton_Update", UpdateContainerButton)
+    if not _G["ContainerFrame1"] and not _G["ContainerFrameCombinedBags"] then return end
     hookedContainerFrame = true
+
+    if ContainerFrameItemButton_Update then
+        hooksecurefunc("ContainerFrameItemButton_Update", UpdateContainerButton)
+    end
+
+    for _, frameName in ipairs(BAG_FRAME_NAMES) do
+        local frame = _G[frameName]
+        if frame then
+            frame:HookScript("OnShow", RefreshAllBags)
+        end
+    end
+    RefreshAllBags()
 end
 
 -- ===========================================================================
@@ -458,6 +505,8 @@ f:RegisterEvent("ADDON_LOADED")
 f:RegisterEvent("PLAYER_LOGIN")
 f:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 f:RegisterEvent("UNIT_INVENTORY_CHANGED")
+f:RegisterEvent("BAG_UPDATE_DELAYED")
+f:RegisterEvent("ITEM_LOCK_CHANGED")
 f:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
         if arg1 == "ItemTrackTags" then
@@ -471,6 +520,9 @@ f:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "PLAYER_LOGIN" then
         if CharacterFrame then CharacterFrame:HookScript("OnShow", RefreshAll) end
         HookContainerFrame()  -- already loaded on some clients by this point
+        return
+    elseif event == "BAG_UPDATE_DELAYED" or event == "ITEM_LOCK_CHANGED" then
+        RefreshAllBags()
         return
     end
     if event == "UNIT_INVENTORY_CHANGED" and arg1 ~= "player" then return end
@@ -501,6 +553,36 @@ SlashCmdList["ITEMTRACKTAGS"] = function(msg)
             end
         end
 
+    elseif msg == "bagdebug" then
+        print("|cff88ccffItemTrackTags|r bag parser view (open your bags first):")
+        for _, frameName in ipairs(BAG_FRAME_NAMES) do
+            local frame = _G[frameName]
+            if frame then
+                if not frame:IsShown() then
+                    print(("  %s: exists, not shown"):format(frameName))
+                else
+                    local buttons = GetBagButtons(frame)
+                    print(("  %s: shown, %d item button(s) found (%s)"):format(
+                        frameName, #buttons, frame.Items and "via .Items" or "via child scan"))
+                    for _, button in ipairs(buttons) do
+                        local bagID = button.GetBagID and button:GetBagID()
+                        local slotID = button:GetID()
+                        if bagID and slotID then
+                            local link = C_Container.GetContainerItemLink(bagID, slotID)
+                            if link then
+                                local letter = GetTrackLetterBag(bagID, slotID)
+                                local q = GetCraftedQuality(link)
+                                print(("    bag %s slot %s: %s%s"):format(
+                                    tostring(bagID), tostring(slotID),
+                                    letter and ("track " .. letter) or "-",
+                                    q and (" crafted quality " .. q) or ""))
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
     elseif msg == "dump" then
         -- Full tooltip line dump -> copyable window
         local out = {}
@@ -523,7 +605,7 @@ SlashCmdList["ITEMTRACKTAGS"] = function(msg)
         ShowDump(table.concat(out, "\n"))
 
     elseif msg == "help" then
-        print("|cff88ccffItemTrackTags|r:  /itt (settings) | /itt debug (parser view) | /itt dump (all tooltip lines)")
+        print("|cff88ccffItemTrackTags|r:  /itt (settings) | /itt debug (equipped parser view) | /itt bagdebug (bag parser view) | /itt dump (all tooltip lines)")
 
     else
         TogglePanel()
