@@ -94,11 +94,21 @@ local SLOTS = {
 
 local tags = {}
 
+-- The marker sits on its own child frame raised well above the button's
+-- own frame level, rather than as a region owned by the button itself.
+-- Bag item buttons stack several child frames on top (cooldown swipe,
+-- new-item glow, search-match overlay); a region merely drawn at the top
+-- OVERLAY sublevel of the button can still end up underneath those, since
+-- draw-layer ordering only arbitrates between regions owned by the same
+-- frame -- a higher-level sibling frame always wins regardless of layer.
 local function GetTag(button)
     if tags[button] then return tags[button] end
-    local fs = button:CreateFontString(nil, "OVERLAY")
+    local overlay = CreateFrame("Frame", nil, button)
+    overlay:SetAllPoints(button)
+    overlay:SetFrameLevel(button:GetFrameLevel() + 10)
+    local fs = overlay:CreateFontString(nil, "OVERLAY")
     fs:SetFont(STANDARD_TEXT_FONT, DB and DB.fontSize or DEFAULTS.fontSize, FONT_FLAGS)
-    fs:SetPoint(ANCHOR, button, ANCHOR, OFFSET_X, OFFSET_Y)
+    fs:SetPoint(ANCHOR, overlay, ANCHOR, OFFSET_X, OFFSET_Y)
     fs:SetDrawLayer("OVERLAY", 7)
     tags[button] = fs
     return fs
