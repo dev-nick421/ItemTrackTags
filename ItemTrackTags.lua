@@ -531,57 +531,73 @@ f:SetScript("OnEvent", function(_, event, arg1)
 end)
 
 -- ===========================================================================
---  MENU:  /itt  -> menu  |  /itt debug  -> parser dump  |  /itt dump -> all lines
+--  MENU:  /itt  -> menu  |  /itt debug [c|b]  -> parser dump  |  /itt dump -> all lines
 -- ===========================================================================
-SLASH_ITEMTRACKTAGS1 = "/itt"
-SlashCmdList["ITEMTRACKTAGS"] = function(msg)
-    msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
-    if msg == "debug" then
-        print("|cff88ccffItemTrackTags|r parser view (equipped gear):")
-        for _, slotName in ipairs(SLOTS) do
-            local button = _G[slotName]
-            local slotID = button and button:GetID()
-            if slotID then
-                local letter = GetTrackLetter(slotID)
-                local q = GetCraftedQuality(GetInventoryItemLink("player", slotID))
-                if letter then
-                    print(("  %s: |cff44ff44track %s|r"):format(slotName, letter))
-                end
-                if q then
-                    print(("  %s: |cffffcc00crafted quality %d|r"):format(slotName, q))
-                end
+
+-- Parser-view lines for equipped gear (Character panel slots).
+local function BuildCharacterDebugLines(out)
+    out[#out + 1] = "ItemTrackTags parser view (equipped gear):"
+    for _, slotName in ipairs(SLOTS) do
+        local button = _G[slotName]
+        local slotID = button and button:GetID()
+        if slotID then
+            local letter = GetTrackLetter(slotID)
+            local q = GetCraftedQuality(GetInventoryItemLink("player", slotID))
+            if letter then
+                out[#out + 1] = ("  %s: track %s"):format(slotName, letter)
+            end
+            if q then
+                out[#out + 1] = ("  %s: crafted quality %d"):format(slotName, q)
             end
         end
+    end
+end
 
-    elseif msg == "bagdebug" then
-        print("|cff88ccffItemTrackTags|r bag parser view (open your bags first):")
-        for _, frameName in ipairs(BAG_FRAME_NAMES) do
-            local frame = _G[frameName]
-            if frame then
-                if not frame:IsShown() then
-                    print(("  %s: exists, not shown"):format(frameName))
-                else
-                    local buttons = GetBagButtons(frame)
-                    print(("  %s: shown, %d item button(s) found (%s)"):format(
-                        frameName, #buttons, frame.Items and "via .Items" or "via child scan"))
-                    for _, button in ipairs(buttons) do
-                        local bagID = button.GetBagID and button:GetBagID()
-                        local slotID = button:GetID()
-                        if bagID and slotID then
-                            local link = C_Container.GetContainerItemLink(bagID, slotID)
-                            if link then
-                                local letter = GetTrackLetterBag(bagID, slotID)
-                                local q = GetCraftedQuality(link)
-                                print(("    bag %s slot %s: %s%s"):format(
-                                    tostring(bagID), tostring(slotID),
-                                    letter and ("track " .. letter) or "-",
-                                    q and (" crafted quality " .. q) or ""))
-                            end
+-- Parser-view lines for whatever bag windows are currently open.
+local function BuildBagDebugLines(out)
+    out[#out + 1] = "ItemTrackTags parser view (open your bags first):"
+    for _, frameName in ipairs(BAG_FRAME_NAMES) do
+        local frame = _G[frameName]
+        if frame then
+            if not frame:IsShown() then
+                out[#out + 1] = ("  %s: exists, not shown"):format(frameName)
+            else
+                local buttons = GetBagButtons(frame)
+                out[#out + 1] = ("  %s: shown, %d item button(s) found (%s)"):format(
+                    frameName, #buttons, frame.Items and "via .Items" or "via child scan")
+                for _, button in ipairs(buttons) do
+                    local bagID = button.GetBagID and button:GetBagID()
+                    local slotID = button:GetID()
+                    if bagID and slotID then
+                        local link = C_Container.GetContainerItemLink(bagID, slotID)
+                        if link then
+                            local letter = GetTrackLetterBag(bagID, slotID)
+                            local q = GetCraftedQuality(link)
+                            out[#out + 1] = ("    bag %s slot %s: %s%s"):format(
+                                tostring(bagID), tostring(slotID),
+                                letter and ("track " .. letter) or "-",
+                                q and (" crafted quality " .. q) or "")
                         end
                     end
                 end
             end
         end
+    end
+end
+
+SLASH_ITEMTRACKTAGS1 = "/itt"
+SlashCmdList["ITEMTRACKTAGS"] = function(msg)
+    msg = (msg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    local cmd, sub = msg:match("^(%S*)%s*(%S*)$")
+
+    if cmd == "debug" then
+        local out = {}
+        if sub == "b" then
+            BuildBagDebugLines(out)
+        else
+            BuildCharacterDebugLines(out)
+        end
+        ShowDump(table.concat(out, "\n"))
 
     elseif msg == "dump" then
         -- Full tooltip line dump -> copyable window
@@ -604,8 +620,8 @@ SlashCmdList["ITEMTRACKTAGS"] = function(msg)
         end
         ShowDump(table.concat(out, "\n"))
 
-    elseif msg == "help" then
-        print("|cff88ccffItemTrackTags|r:  /itt (settings) | /itt debug (equipped parser view) | /itt bagdebug (bag parser view) | /itt dump (all tooltip lines)")
+    elseif cmd == "help" then
+        print("|cff88ccffItemTrackTags|r:  /itt (settings) | /itt debug c (equipped parser view) | /itt debug b (bag parser view) | /itt dump (all tooltip lines)")
 
     else
         TogglePanel()

@@ -42,7 +42,7 @@ Settings are saved per account.
 Track detection ignores any modifier prefix (e.g. `Sporefused:`, `Galactic Void-Charged:`), reading only the track word before the rank (new item modifiers should work automatically)
 
 Currently works with **English** and **German** clients.
-For any other locale, run `/itt debug` with (different track!) gear equipped to print the raw upgrade lines, then add the localized track word to the `TRACKS` table.
+For any other locale, run `/itt dump` with (different track!) gear equipped to print the raw upgrade lines, then add the localized track word to the `TRACKS` table.
 
 Help with localization is much appreciated -> **Create a PR!**
 
