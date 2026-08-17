@@ -290,6 +290,16 @@ local function RefreshAllBags()
     end
 end
 
+-- Belt-and-suspenders: whatever Blizzard event/hook is actually supposed to
+-- signal "bag contents redrawn" on this client, poll for it instead of
+-- betting on a specific one. Cheap -- RefreshAllBags no-ops instantly for
+-- every frame that isn't shown, and only iterates buttons for open bags.
+local bagRefreshTicker
+local function EnsureBagRefreshTicker()
+    if bagRefreshTicker then return end
+    bagRefreshTicker = C_Timer.NewTicker(0.5, RefreshAllBags)
+end
+
 -- ContainerFrameItemButton_Update lives in Blizzard_ContainerFrame, which
 -- can load on-demand (first time bags are opened) or already be loaded by
 -- login, depending on client state -- handle both. Hooking it gives instant
@@ -530,6 +540,7 @@ f:SetScript("OnEvent", function(_, event, arg1)
     elseif event == "PLAYER_LOGIN" then
         if CharacterFrame then CharacterFrame:HookScript("OnShow", RefreshAll) end
         HookContainerFrame()  -- already loaded on some clients by this point
+        EnsureBagRefreshTicker()
         return
     elseif event == "BAG_UPDATE_DELAYED" or event == "ITEM_LOCK_CHANGED" then
         RefreshAllBags()
@@ -563,9 +574,13 @@ local function BuildCharacterDebugLines(out)
     end
 end
 
--- Parser-view lines for whatever bag windows are currently open.
+-- Parser-view lines for whatever bag windows are currently open. Actually
+-- runs the real render call (UpdateContainerButton) per button and reports
+-- the resulting marker state, instead of just the parsed data, so we can
+-- tell a triggering problem apart from a rendering problem.
 local function BuildBagDebugLines(out)
-    out[#out + 1] = "ItemTrackTags parser view (open your bags first):"
+    out[#out + 1] = ("ItemTrackTags parser view -- hooked=%s ticker=%s"):format(
+        tostring(hookedContainerFrame), tostring(bagRefreshTicker ~= nil))
     for _, frameName in ipairs(BAG_FRAME_NAMES) do
         local frame = _G[frameName]
         if frame then
@@ -581,12 +596,15 @@ local function BuildBagDebugLines(out)
                     if bagID and slotID then
                         local link = C_Container.GetContainerItemLink(bagID, slotID)
                         if link then
+                            UpdateContainerButton(button)
+                            local fs = tags[button]
                             local letter = GetTrackLetterBag(bagID, slotID)
                             local q = GetCraftedQuality(link)
-                            out[#out + 1] = ("    bag %s slot %s: %s%s"):format(
+                            out[#out + 1] = ("    bag %s slot %s: %s%s  [fs shown=%s text=%q]"):format(
                                 tostring(bagID), tostring(slotID),
                                 letter and ("track " .. letter) or "-",
-                                q and (" crafted quality " .. q) or "")
+                                q and (" crafted quality " .. q) or "",
+                                tostring(fs and fs:IsShown()), fs and fs:GetText() or "")
                         end
                     end
                 end
