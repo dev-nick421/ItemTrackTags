@@ -1,6 +1,6 @@
 # Item Track Tags
 
-A lightweight World of Warcraft addon that marks each equipped item on the Character panel (**C**):
+A lightweight World of Warcraft addon that marks each equipped item on the Character panel (**C**) *and* every item sitting in your bags:
 
 - **Upgrade-track items** show a tiny colored letter.
 - **Crafted items** show their crafting quality icon (Tier 1–5).
@@ -14,8 +14,8 @@ A lightweight World of Warcraft addon that marks each equipped item on the Chara
 | H | Hero | orange |
 | M | Myth | pink |
 
-Just sits in the corner of each gear slot.
-Updates when you open the panel or swap gear.
+Just sits in the corner of each gear slot and each bag item.
+Updates when you open the Character panel or a bag, or swap/loot gear.
 
 ## Install
 
@@ -48,4 +48,4 @@ Help with localization is much appreciated -> **Create a PR!**
 
 ## Requirements
 
-World of Warcraft: Midnight (interface 12.0+).
+World of Warcraft: Midnight (interface 12.1+).

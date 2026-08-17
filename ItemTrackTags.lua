@@ -1,5 +1,6 @@
 --[[ Item Track Tags ---------------------------------------------------------
-  Marks each equipped item in the Character panel (C):
+  Marks each equipped item on the Character panel (C) and each item sitting
+  in your bags/inventory:
     * Upgrade-track items -> a colored letter   E A V C H M
     * Crafted items       -> their crafting quality icon (Tier 1-5)
 
@@ -109,11 +110,10 @@ end
 
 -- Upgrade track is the word right before the "<cur>/<max>" rank.
 -- Ignore any prefixes (Sporefused:, Ascendant Voidforged etc.) automatically.
-local function GetTrackLetter(slotID)
-    local data = C_TooltipInfo.GetInventoryItem("player", slotID)
-    if not data or not data.lines then return nil end
+local function ParseTrackLetterFromLines(lines)
+    if not lines then return nil end
     local fallback
-    for _, line in ipairs(data.lines) do
+    for _, line in ipairs(lines) do
         local text = line.leftText
         if text then
             -- Normal Items -> track word before the rank numbers.
@@ -134,9 +134,19 @@ local function GetTrackLetter(slotID)
     return fallback
 end
 
--- Crafting quality tier (1-5) for crafted gear
-local function GetCraftedQuality(slotID)
-    local link = GetInventoryItemLink("player", slotID)
+local function GetTrackLetter(slotID)
+    local data = C_TooltipInfo.GetInventoryItem("player", slotID)
+    return data and ParseTrackLetterFromLines(data.lines)
+end
+
+-- Same lookup, for an item sitting in a bag slot instead of equipped.
+local function GetTrackLetterBag(bagID, slotID)
+    local data = C_TooltipInfo.GetBagItem(bagID, slotID)
+    return data and ParseTrackLetterFromLines(data.lines)
+end
+
+-- Crafting quality tier (1-5) for crafted gear, given its item link.
+local function GetCraftedQuality(link)
     if not link then return nil end
     local f = C_TradeSkillUI and C_TradeSkillUI.GetItemCraftedQualityByItemInfo
     if not f then return nil end
@@ -167,7 +177,7 @@ local function UpdateSlot(button)
 
     -- Otherwise, crafted gear shows its quality icon (if enabled).
     if DB.showCrafted then
-        local q = GetCraftedQuality(slotID)
+        local q = GetCraftedQuality(GetInventoryItemLink("player", slotID))
         if q then
             local s = DB.fontSize + 2
             fs:SetText(("|A:Professions-ChatIcon-Quality-Tier%d:%d:%d|a"):format(q, s, s))
@@ -187,6 +197,65 @@ local function RefreshAll()
         local button = _G[slotName]
         if button then UpdateSlot(button) end
     end
+end
+
+-- Same marker logic, applied to an item button living in a bag/inventory
+-- window instead of the Character panel. Works for the combined bags frame
+-- as well as the classic per-bag frames since both use the same item
+-- button mixin/update function.
+local function UpdateContainerButton(button)
+    if not DB then return end
+    local bagID = button.GetBagID and button:GetBagID()
+    if not bagID then
+        local parent = button:GetParent()
+        bagID = parent and parent.GetID and parent:GetID()
+    end
+    local slotID = button:GetID()
+    if not bagID or not slotID then return end
+
+    local fs = GetTag(button)
+    fs:SetFont(STANDARD_TEXT_FONT, DB.fontSize, FONT_FLAGS)
+
+    local link = C_Container.GetContainerItemLink(bagID, slotID)
+    if not link then
+        fs:SetText("")
+        fs:Hide()
+        return
+    end
+
+    local letter = GetTrackLetterBag(bagID, slotID)
+    if letter then
+        local c = DB.colors[letter]
+        fs:SetText(letter)
+        fs:SetTextColor(c[1], c[2], c[3])
+        fs:Show()
+        return
+    end
+
+    if DB.showCrafted then
+        local q = GetCraftedQuality(link)
+        if q then
+            local s = DB.fontSize + 2
+            fs:SetText(("|A:Professions-ChatIcon-Quality-Tier%d:%d:%d|a"):format(q, s, s))
+            fs:SetTextColor(1, 1, 1)
+            fs:Show()
+            return
+        end
+    end
+
+    fs:SetText("")
+    fs:Hide()
+end
+
+-- ContainerFrameItemButton_Update lives in Blizzard_ContainerFrame, which
+-- can load on-demand (first time bags are opened) or already be loaded by
+-- login, depending on client state -- handle both.
+local hookedContainerFrame = false
+local function HookContainerFrame()
+    if hookedContainerFrame then return end
+    if not ContainerFrameItemButton_Update then return end
+    hooksecurefunc("ContainerFrameItemButton_Update", UpdateContainerButton)
+    hookedContainerFrame = true
 end
 
 -- ===========================================================================
@@ -395,10 +464,13 @@ f:SetScript("OnEvent", function(_, event, arg1)
             ItemTrackTagsDB = ItemTrackTagsDB or {}
             ApplyDefaults(ItemTrackTagsDB, DEFAULTS)
             DB = ItemTrackTagsDB
+        elseif arg1 == "Blizzard_ContainerFrame" then
+            HookContainerFrame()
         end
         return
     elseif event == "PLAYER_LOGIN" then
         if CharacterFrame then CharacterFrame:HookScript("OnShow", RefreshAll) end
+        HookContainerFrame()  -- already loaded on some clients by this point
         return
     end
     if event == "UNIT_INVENTORY_CHANGED" and arg1 ~= "player" then return end
@@ -419,7 +491,7 @@ SlashCmdList["ITEMTRACKTAGS"] = function(msg)
             local slotID = button and button:GetID()
             if slotID then
                 local letter = GetTrackLetter(slotID)
-                local q = GetCraftedQuality(slotID)
+                local q = GetCraftedQuality(GetInventoryItemLink("player", slotID))
                 if letter then
                     print(("  %s: |cff44ff44track %s|r"):format(slotName, letter))
                 end
